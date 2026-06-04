@@ -1,18 +1,19 @@
 import warnings 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
-import numpy as np
 import pandas as pd
 from datetime import datetime as dt
 import os
 import requests
 from dotenv import load_dotenv
-import sys
 
 
 # This is a experimental script for parsing an excel workplan and adding the information into a new trello board. 
 
 load_dotenv()
+API_KEY = os.getenv("TRELLO_API_KEY")
+TOKEN = os.getenv("TRELLO_TOKEN")
+
 
 # Path to the excel workplan. Change this to match the location for you own workplan. 
 workplan_file = r"C:\Users\tpeterschmidt\Documents\Work Plan RMPC-FishReg.xlsx"
@@ -36,11 +37,12 @@ new_cards = workplan_df["CARD NAME"].unique()
 # print("Board members:", new_board_members)
 # print("Unique cards in the workplan:", new_cards)
 
+# Get existing boards in the workspace to check if the board already exsits.
 response = requests.get(
     "https://api.trello.com/1/organizations/{}/boards".format(os.getenv("WORKSPACE_ID")),
     params={
-        "key": os.getenv("TRELLO_API_KEY"),
-        "token": os.getenv("TRELLO_TOKEN")
+        "key": API_KEY,
+        "token": TOKEN
     },
 )
 
@@ -51,6 +53,7 @@ existing_board_names = {
     for board in response.json()
 }
 
+# If the board already exists, use the existing board moving forward. If not, create the new board and use the new board.
 if new_board_name in existing_board_names:
     board_id = existing_board_names[new_board_name]
     print(f"A board with the name '{new_board_name}' already exists.")
@@ -59,8 +62,8 @@ else:
         "https://api.trello.com/1/boards/",
         params={
             "name": new_board_name,
-            "key": os.getenv("TRELLO_API_KEY"),
-            "token": os.getenv("TRELLO_TOKEN"),
+            "key": API_KEY,
+            "token": TOKEN,
             "idOrganization": os.getenv("WORKSPACE_ID"),
             "defaultLists": "false"
         },
@@ -70,16 +73,18 @@ else:
     board_id = response.json()["id"]
     print(f"Created a new board with the name '{new_board_name}'.")
 
+# Check the board for any existing lists to avoid creating duplicates. 
 response = requests.get(
     f"https://api.trello.com/1/boards/{board_id}/lists",
     params={
-        "key": os.getenv("TRELLO_API_KEY"),
-        "token": os.getenv("TRELLO_TOKEN")
+        "key": API_KEY,
+        "token": TOKEN
     }
 )
 response.raise_for_status()
 existing_list_names = {lst["name"] for lst in response.json()}
 
+# If the list already exists, do not create a duplicate. If not, create the new list from the workplan.
 for name in new_lists:
     if name in existing_list_names:
         print(f"A list with the name '{name}' already exists on the board.")
@@ -88,8 +93,8 @@ for name in new_lists:
     response = requests.post (
         "https://api.trello.com/1/lists",
         params={
-            "key": os.getenv("TRELLO_API_KEY"),
-            "token": os.getenv("TRELLO_TOKEN"),
+            "key": API_KEY,
+            "token": TOKEN,
             "idBoard": board_id,
             "name": name
         }   ,
@@ -97,77 +102,68 @@ for name in new_lists:
     response.raise_for_status()
     print(f"Created a new list with the name '{name}' on the board.")
 
+# Get all the lists on the board to get the list ids for creating the cards.
+response = requests.get(
+    f"https://api.trello.com/1/boards/{board_id}/lists",
+    params={
+        "key": API_KEY,
+        "token": TOKEN
+    }
+)
+response.raise_for_status()
+
+lists = response.json()
+
+list_dict = {lst["name"].lower(): lst["id"] for lst in lists}
+
+# Get a list of all the cards on the board to avoid creating duplicates.
+response = requests.get(
+    f"https://api.trello.com/1/boards/{board_id}/cards",
+    params={
+        "key": os.getenv("TRELLO_API_KEY"),
+        "token": os.getenv("TRELLO_TOKEN")
+    }
+)
+response.raise_for_status()
+
+cards = response.json()
+
+existing_cards = {
+    (card["idList"], card["name"].lower())
+    for card in cards}
+
+for _, row in workplan_df.iterrows():
+    list_name = row["LIST NAME"]
+    card_name = row["CARD NAME"]
+
+    if pd.isna(list_name) or pd.isna(card_name):
+        continue
+
+    list_id = list_dict.get(list_name.lower())
+
+    if list_id is None:
+        print(f"List '{list_name}' not found on the board. Skipping card '{card_name}'.")
+        continue
+
+    if (list_id, card_name.lower()) in existing_cards:
+        print(f"A card with the name '{card_name}' already exists in the list '{list_name}'. Skipping.")
+        continue
+
+    response = requests.post(
+        "https://api.trello.com/1/cards",
+        params={
+            "key": API_KEY,
+            "token": TOKEN,
+            "idList": list_id,
+            "name": card_name
+        },
+    )
+    response.raise_for_status()
+
+    existing_cards.add((list_id, card_name.lower()))
+
 print("New board and lists ready.")
 
 
 
 
-
-#         "key": os.getenv("TRELLO_API_KEY"),
-#         "token": os.getenv("TRELLO_TOKEN"),
-#         "idOrganization": os.getenv("WORKSPACE_ID")
-#     }
-# ).json()
-
-# existing_board_names = {
-#     board["name"]: board["id"]
-#     for board in existing_boards
-# }
-
-# board_id = None
-# existing_board_detected = False
-
-# if new_board_name in existing_board_names:
-#     board_id = existing_board_names[new_board_name]
-#     existing_board_detected = True
-#     print(f"A board with the name '{new_board_name}' already exists.")
-# else:
-#     board = requests.post(
-#         "https://api.trello.com/1/boards/",
-#         params={
-#             "name": new_board_name,
-#             "key": os.getenv("TRELLO_API_KEY"),
-#             "token": os.getenv("TRELLO_TOKEN"),
-#             "idOrganization": os.getenv("WORKSPACE_ID"),
-#             "defaultLists": "false"
-#         }
-#     ).json()
-
-#     board_id = board["id"]
-
-
-# if not existing_board_detected:
-#     for name in new_lists:
-#         requests.post(
-#             "https://api.trello.com/1/lists",
-#             params={
-#                 "key": os.getenv("TRELLO_API_KEY"),
-#                 "token": os.getenv("TRELLO_TOKEN"),
-#                 "idBoard": board_id,
-#                 "name": name
-#             }   
-#         )
-# else:
-#     existing_lists = requests.get(
-#         f"https://api.trello.com/1/boards/{board_id}/lists",
-#         params={
-#             "key": os.getenv("TRELLO_API_KEY"),
-#             "token": os.getenv("TRELLO_TOKEN"),
-#         }   
-#     ).json()
-
-#     for name in new_lists:
-#         if name not in [lst["name"] for lst in existing_lists]:
-#             requests.post(
-#                 "https://api.trello.com/1/lists",
-#                 params={
-#                     "key": os.getenv("TRELLO_API_KEY"),
-#                     "token": os.getenv("TRELLO_TOKEN"),
-#                     "idBoard": board_id,
-#                     "name": name
-#                 }   
-#             )
-
-
-
-# print("Created the board and lists.")
