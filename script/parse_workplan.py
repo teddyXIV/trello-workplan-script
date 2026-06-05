@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 API_KEY = os.getenv("TRELLO_API_KEY")
 TOKEN = os.getenv("TRELLO_TOKEN")
+WORKSPACE_ID = os.getenv("WORKSPACE_ID")
 
 
 # Path to the excel workplan. Change this to match the location for you own workplan. 
@@ -36,6 +37,10 @@ new_cards = workplan_df["CARD NAME"].unique()
 # print("Board name:", new_board_name)
 # print("Board members:", new_board_members)
 # print("Unique cards in the workplan:", new_cards)
+
+# ==============================================================================================
+# Creating the board.
+# ==============================================================================================
 
 # Get existing boards in the workspace to check if the board already exsits.
 response = requests.get(
@@ -64,7 +69,7 @@ else:
             "name": new_board_name,
             "key": API_KEY,
             "token": TOKEN,
-            "idOrganization": os.getenv("WORKSPACE_ID"),
+            "idOrganization": WORKSPACE_ID,
             "defaultLists": "false"
         },
     )
@@ -72,6 +77,39 @@ else:
 
     board_id = response.json()["id"]
     print(f"Created a new board with the name '{new_board_name}'.")
+
+# ==============================================================================================
+# Creating the labels.
+# ==============================================================================================
+
+label_df = workplan_df[["CARD LABEL", "CARD LABEL COLOR"]].dropna().drop_duplicates()
+
+label_definitions = {
+    row["CARD LABEL"]: row["CARD LABEL COLOR"].lower()
+    for _, row in label_df.iterrows()
+}
+
+label_dict = {}
+
+for name, color in label_definitions.items():
+    response = requests.post(
+        f"https://api.trello.com/1/boards/{board_id}/labels",
+        params={
+            "key": API_KEY,
+            "token": TOKEN,
+            "name": name,
+            "color": color
+        }
+    )
+    response.raise_for_status()
+
+    label_dict[name.lower()] = response.json()["id"]
+
+    print(f"✅ Created label '{name}' ({color})")
+    
+# ==============================================================================================
+# Creating the lists.
+# ==============================================================================================
 
 # Check the board for any existing lists to avoid creating duplicates. 
 response = requests.get(
@@ -102,6 +140,10 @@ for name in new_lists:
     response.raise_for_status()
     print(f"Created a new list with the name '{name}' on the board.")
 
+# ==============================================================================================
+# Creating the cards. 
+# ==============================================================================================
+
 # Get all the lists on the board to get the list ids for creating the cards.
 response = requests.get(
     f"https://api.trello.com/1/boards/{board_id}/lists",
@@ -120,8 +162,8 @@ list_dict = {lst["name"].lower(): lst["id"] for lst in lists}
 response = requests.get(
     f"https://api.trello.com/1/boards/{board_id}/cards",
     params={
-        "key": os.getenv("TRELLO_API_KEY"),
-        "token": os.getenv("TRELLO_TOKEN")
+        "key": API_KEY,
+        "token": TOKEN
     }
 )
 response.raise_for_status()
@@ -132,6 +174,7 @@ existing_cards = {
     (card["idList"], card["name"].lower())
     for card in cards}
 
+# Loop through the rows of cards in the workplan and create the cards on the trello board. 
 for _, row in workplan_df.iterrows():
     list_name = row["LIST NAME"]
     card_name = row["CARD NAME"]
@@ -160,7 +203,82 @@ for _, row in workplan_df.iterrows():
     )
     response.raise_for_status()
 
+    card_id = response.json()["id"]
+
+    response = requests.post(
+        f"https://api.trello.com/1/cards/{card_id}/checklists",
+        params={
+            "key": API_KEY,
+            "token": TOKEN,
+            "name": card_name
+        },
+    )
+
+    response.raise_for_status()
+
+    # when testing with a workspace that has more members available, make the call to add members here. 
+
     existing_cards.add((list_id, card_name.lower()))
+
+# ==============================================================================================
+# Adding checklist items to the cards.
+# ==============================================================================================
+
+# Get a list of all checklists and their ids. 
+response = requests.get(
+    f"https://api.trello.com/1/boards/{board_id}/cards",
+    params={
+        "key": API_KEY,
+        "token": TOKEN,
+        "checklists": "all"
+    }
+)
+response.raise_for_status()
+
+cards = response.json()
+
+existing_checklist_items = {
+    (checklist["id"], item["name"].lower())
+    for card in cards
+    for checklist in card.get("checklists", [])
+    for item in checklist.get("checkItems", [])
+}
+
+checklist_dict = {
+    (card["name"].lower(), checklist["name"].lower()): checklist["id"]
+    for card in cards
+    for checklist in card.get("checklists", [])
+}
+
+for _, row in workplan_df.iterrows():
+    card_name = row["CARD NAME"]
+    checklist_item = row["CHECKLIST ITEM DESCRIPTION"]
+
+    if pd.isna(card_name) or pd.isna(checklist_item):
+        continue
+
+    checklist_id = checklist_dict.get((card_name.lower(), card_name.lower()))
+
+    if checklist_id is None:
+        print(f"Checklist for card '{card_name}' not found. Skipping checklist item '{checklist_item}'.")
+        continue
+
+    if (checklist_id, checklist_item.lower()) in existing_checklist_items:
+        print(f"A checklist item with the name '{checklist_item}' already exists in the checklist for card '{card_name}'. Skipping.")
+        continue
+
+    response = requests.post(
+        f"https://api.trello.com/1/checklists/{checklist_id}/checkItems",
+        params={
+            "key": API_KEY,
+            "token": TOKEN,
+            "name": checklist_item
+        },
+    )
+    response.raise_for_status()
+
+    existing_checklist_items.add((checklist_id, checklist_item.lower()))
+
 
 print("New board and lists ready.")
 
