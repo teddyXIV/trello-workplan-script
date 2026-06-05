@@ -85,13 +85,30 @@ else:
 label_df = workplan_df[["CARD LABEL", "CARD LABEL COLOR"]].dropna().drop_duplicates()
 
 label_definitions = {
-    row["CARD LABEL"]: row["CARD LABEL COLOR"].lower()
+    row["CARD LABEL"]: row["CARD LABEL COLOR"].lower().strip()
     for _, row in label_df.iterrows()
 }
 
-label_dict = {}
+response = requests.get(
+    f"https://api.trello.com/1/boards/{board_id}/labels",
+    params={
+        "key": API_KEY,
+        "token": TOKEN
+    }
+)
+response.raise_for_status()
+
+existing_labels_dict = {label["name"].lower(): label["id"] for label in response.json()}
+
+label_dict = existing_labels_dict.copy()
 
 for name, color in label_definitions.items():
+    key = name.lower().strip()
+
+    if key in existing_labels_dict:
+        print(f"A label with the name '{name}' already exists on the board.")
+        continue
+
     response = requests.post(
         f"https://api.trello.com/1/boards/{board_id}/labels",
         params={
@@ -103,10 +120,10 @@ for name, color in label_definitions.items():
     )
     response.raise_for_status()
 
-    label_dict[name.lower()] = response.json()["id"]
+    label_dict[key] = response.json()["id"]
 
     print(f"✅ Created label '{name}' ({color})")
-    
+
 # ==============================================================================================
 # Creating the lists.
 # ==============================================================================================
@@ -191,6 +208,8 @@ for _, row in workplan_df.iterrows():
     if (list_id, card_name.lower()) in existing_cards:
         print(f"A card with the name '{card_name}' already exists in the list '{list_name}'. Skipping.")
         continue
+    
+    label_id = label_dict.get(row["CARD LABEL"].lower())
 
     response = requests.post(
         "https://api.trello.com/1/cards",
@@ -198,7 +217,8 @@ for _, row in workplan_df.iterrows():
             "key": API_KEY,
             "token": TOKEN,
             "idList": list_id,
-            "name": card_name
+            "name": card_name,
+            "idLabels": label_id
         },
     )
     response.raise_for_status()
