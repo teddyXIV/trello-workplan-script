@@ -27,7 +27,9 @@ workplan_df = pd.read_excel(workplan_file, sheet_name="Trello Version")
 # Parsing out the different workplan elements. These will be used to create the trello baord, add the board members, and create the lists. 
 new_board_name = workplan_df["BOARD NAME"].iloc[0]
 
-new_board_members = workplan_df["BOARD MEMBERS"].iloc[0].split(", ")
+# new_board_members = workplan_df["BOARD MEMBERS"].iloc[0].split(", ")
+new_board_members = ["Teddy Peterschmidt"]
+
 
 new_lists = workplan_df["LIST NAME"].unique()
 
@@ -72,6 +74,69 @@ else:
 
     board_id = response.json()["id"]
     print(f"Created a new board with the name '{new_board_name}'.")
+
+# ==============================================================================================
+# Adding members to the board.
+# ==============================================================================================
+
+# Getting all member of the workspace and creating a dictionary with names nad member_ids.
+response = requests.get(
+    f"https://api.trello.com/1/organizations/{WORKSPACE_ID}/members",
+    params={
+        "key": API_KEY,
+        "token": TOKEN
+    }
+)
+response.raise_for_status()
+
+members = response.json()
+
+member_dict = {member["fullName"].lower().strip(): member["id"] for member in members}
+
+# Check what members are already on the board to avoid adding duplicates.
+response = requests.get(
+    f"https://api.trello.com/1/boards/{board_id}/members",
+    params={
+        "key": API_KEY,
+        "token": TOKEN
+    }
+)
+response.raise_for_status()
+
+board_members = response.json()
+
+existing_board_member_ids = {
+    member["id"]
+    for member in board_members
+}
+
+
+for member in new_board_members:
+    member_key = member_dict.get(member.lower().strip())
+    member_id = member_dict.get(member.lower().strip())
+
+    if member_id is None:
+        print(f"Member '{member}' not found in the workspace. Skipping.")
+        continue
+
+    if member_id in existing_board_member_ids:
+        print(f"Member '{member}' is already on the board.")
+        continue
+
+    response = requests.put(
+        f"https://api.trello.com/1/boards/{board_id}/members/{member_id}",
+        params={
+            "key": API_KEY,
+            "token": TOKEN,
+            "type": "normal"
+        },
+    )
+
+    response.raise_for_status()
+
+    print(f"Added member '{member}' to the board.")
+
+    existing_board_member_ids.add(member_id)
 
 # ==============================================================================================
 # Creating the labels.
