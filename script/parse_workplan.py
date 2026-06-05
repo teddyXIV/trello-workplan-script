@@ -33,11 +33,6 @@ new_lists = workplan_df["LIST NAME"].unique()
 
 new_cards = workplan_df["CARD NAME"].unique()
 
-# print("Unique lists in the workplan:", unique_lists)
-# print("Board name:", new_board_name)
-# print("Board members:", new_board_members)
-# print("Unique cards in the workplan:", new_cards)
-
 # ==============================================================================================
 # Creating the board.
 # ==============================================================================================
@@ -195,6 +190,9 @@ existing_cards = {
 for _, row in workplan_df.iterrows():
     list_name = row["LIST NAME"]
     card_name = row["CARD NAME"]
+    start_date_raw = pd.to_datetime(row["CARD START DATE"], errors="coerce")
+    end_date_raw = pd.to_datetime(row["CARD END DATE"], errors="coerce")
+
 
     if pd.isna(list_name) or pd.isna(card_name):
         continue
@@ -209,6 +207,16 @@ for _, row in workplan_df.iterrows():
         print(f"A card with the name '{card_name}' already exists in the list '{list_name}'. Skipping.")
         continue
     
+    if pd.notna(start_date_raw):
+        start_date = start_date_raw.tz_localize("UTC").isoformat().replace("+00:00", "Z")
+    else:
+        start_date = None
+
+    if pd.notna(end_date_raw):
+        end_date = end_date_raw.tz_localize("UTC").isoformat().replace("+00:00", "Z")
+    else:
+        end_date = None
+
     label_id = label_dict.get(row["CARD LABEL"].lower())
 
     response = requests.post(
@@ -218,7 +226,10 @@ for _, row in workplan_df.iterrows():
             "token": TOKEN,
             "idList": list_id,
             "name": card_name,
-            "idLabels": label_id
+            "idLabels": label_id,
+            "start": start_date,
+            "due": end_date,
+            "dueReminder": 120
         },
     )
     response.raise_for_status()
@@ -273,6 +284,7 @@ checklist_dict = {
 for _, row in workplan_df.iterrows():
     card_name = row["CARD NAME"]
     checklist_item = row["CHECKLIST ITEM DESCRIPTION"]
+    due_date_raw = pd.to_datetime(row["CHECKLIST ITEM DUE DATE"], errors="coerce")
 
     if pd.isna(card_name) or pd.isna(checklist_item):
         continue
@@ -287,12 +299,18 @@ for _, row in workplan_df.iterrows():
         print(f"A checklist item with the name '{checklist_item}' already exists in the checklist for card '{card_name}'. Skipping.")
         continue
 
+    if pd.notna(due_date_raw):
+        due_date = due_date_raw.tz_localize("UTC").isoformat().replace("+00:00", "Z")
+    else:
+        due_date = None
+
     response = requests.post(
         f"https://api.trello.com/1/checklists/{checklist_id}/checkItems",
         params={
             "key": API_KEY,
             "token": TOKEN,
-            "name": checklist_item
+            "name": checklist_item,
+            "due": due_date
         },
     )
     response.raise_for_status()
