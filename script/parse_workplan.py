@@ -8,7 +8,7 @@ import requests
 from dotenv import load_dotenv
 
 
-# This is a experimental script for parsing an excel workplan and adding the information into a new trello board. 
+# This is a script for parsing an excel workplan and adding the information into a new trello board. 
 
 load_dotenv()
 API_KEY = os.getenv("TRELLO_API_KEY")
@@ -217,7 +217,7 @@ for _, row in workplan_df.iterrows():
     else:
         end_date = None
 
-    label_id = label_dict.get(row["CARD LABEL"].lower())
+    label_id = label_dict.get(row["CARD LABEL"].lower().strip())
 
     response = requests.post(
         "https://api.trello.com/1/cards",
