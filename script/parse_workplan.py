@@ -247,6 +247,11 @@ response.raise_for_status()
 
 cards = response.json()
 
+card_dict = {
+    card["name"].lower(): card["id"]
+    for card in cards 
+}
+
 existing_cards = {
     (card["idList"], card["name"].lower())
     for card in cards}
@@ -359,20 +364,22 @@ response.raise_for_status()
 
 cards = response.json()
 
-existing_checklist_items = {
-    (checklist["id"], item["name"].lower())
-    for card in cards
-    for checklist in card.get("checklists", [])
-    for item in checklist.get("checkItems", [])
-}
+# existing_checklist_items = {
+#     (checklist["id"], item["name"].lower().strip())
+#     for card in cards
+#     for checklist in card.get("checklists", [])
+#     for item in checklist.get("checkItems", [])
+# }
 
-existing_item_members = {
-    (checklist["id"], item["name"].lower()):
-    set(item.get("idMembers", []))
-    for card in cards
-    for checklist in card.get("checklists", [])
-    for item in checklist.get("checkItems", [])
-}
+# print(existing_checklist_items)
+
+# existing_item_members = {
+#     (checklist["id"], item["name"].lower().strip()):
+#     set(item.get("idMembers", []))
+#     for card in cards
+#     for checklist in card.get("checklists", [])
+#     for item in checklist.get("checkItems", [])
+# }
 
 checklist_dict = {
     (card["name"].lower(), checklist["name"].lower()): checklist["id"]
@@ -384,17 +391,37 @@ for _, row in workplan_df.iterrows():
     card_name = row["CARD NAME"]
     checklist_item = row["CHECKLIST ITEM DESCRIPTION"]
     due_date_raw = pd.to_datetime(row["CHECKLIST ITEM DUE DATE"], errors="coerce")
+    assignee = row["CHECKLIST ITEM ASSIGNMENT"]
 
     if pd.isna(card_name) or pd.isna(checklist_item):
         continue
 
-    checklist_id = checklist_dict.get((card_name.lower(), card_name.lower()))
+    checklist_id = checklist_dict.get((card_name.lower().strip(), card_name.lower().strip()))
+
+    response = requests.get(
+        f"https://api.trello.com/1/checklists/{checklist_id}/checkItems",
+        params={
+            "key": API_KEY,
+            "token": TOKEN,
+        }
+    )
+    response.raise_for_status()
+
+    existing_checklist_items = {
+        item["name"]
+        for item in response.json()
+    }
+
 
     if checklist_id is None:
         print(f"Checklist for card '{card_name}' not found. Skipping checklist item '{checklist_item}'.")
         continue
 
-    if (checklist_id, checklist_item.lower()) in existing_checklist_items:
+    # if (checklist_id, checklist_item.lower().strip()) in existing_checklist_items:
+    #     print(f"A checklist item with the name '{checklist_item}' already exists in the checklist for card '{card_name}'. Skipping.")
+    #     continue
+
+    if checklist_item in existing_checklist_items:
         print(f"A checklist item with the name '{checklist_item}' already exists in the checklist for card '{card_name}'. Skipping.")
         continue
 
@@ -403,56 +430,64 @@ for _, row in workplan_df.iterrows():
     else:
         due_date = None
 
+    assigned_member = member_dict.get(assignee.lower().strip())
+
     response = requests.post(
         f"https://api.trello.com/1/checklists/{checklist_id}/checkItems",
         params={
             "key": API_KEY,
             "token": TOKEN,
-            "name": checklist_item,
-            "due": due_date
+            "name":  checklist_item,
+            "due": due_date,
+            "idMember": assigned_member if assigned_member is not None else ""
         },
     )
     response.raise_for_status()
 
+    # item_card_id = response.json()["idCard"]
+    item_card_id = card_dict.get(card_name.strip().lower())
+
     check_item_id = response.json()["id"]
 
-    existing_item_members[(checklist_id, checklist_item.lower())] = set()
+    # existing_item_members[(checklist_id, checklist_item.lower())] = set()
 
     existing_checklist_items.add((checklist_id, checklist_item.lower()))
 
-    assignee_raw = row["CHECKLIST ITEM ASSIGNMENT"]
+    # assignee = row["CHECKLIST ITEM ASSIGNMENT"]
 
-    if pd.notna(assignee_raw):
-        assignee_names = [n.strip().lower() for n in assignee_raw.split(",")]
-    else:
-        assignee_names = []
+    # if pd.notna(assignee_raw):
+    #     assignee_names = [n.strip().lower() for n in assignee_raw.split(",")]
+    # else:
+    #     assignee_names = []
 
-    member_ids = [
-        member_dict[name]
-        for name in assignee_names
-        if name in member_dict
-    ]
+    # member_ids = [
+    #     member_dict[name]
+    #     for name in assignee_names
+    #     if name in member_dict
+    # ]
 
     
-    key = (checklist_id, checklist_item.lower())
-    assigned_members = existing_item_members.get(key, set())
+    # key = (checklist_id, checklist_item.lower())
+    # assigned_members = existing_item_members.get(key, set())
 
-    for member_id in member_ids:
-        if member_id in assigned_members:
-            print(f"✅ Member already assigned to '{checklist_item}': skipping")
-            continue
+    # for member_id in member_ids:
+    #     if member_id in assigned_members:
+    #         print(f"✅ Member already assigned to '{checklist_item}': skipping")
+    #         continue
 
-        requests.post(
-            f"https://api.trello.com/1/cards/{card_id}/checkItem/{check_item_id}/idMembers",
-            params={
-                "key": API_KEY,
-                "token": TOKEN,
-                "value": member_id
-            }
-        )
+    #     requests.post(
+    #         f"https://api.trello.com/1/cards/{item_card_id}/checkItem/{check_item_id}/idMembers",
+    #         params={
+    #             "key": API_KEY,
+    #             "token": TOKEN,
+    #             "value": member_id
+    #         }
+    #     )
 
-        # ✅ update lookup (important for same run)
-        assigned_members.add(member_id)
+    #     print(member_id)
+
+    #     # ✅ update lookup (important for same run)
+    #     assigned_members.add(member_id)
 
 
 
