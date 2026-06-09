@@ -364,23 +364,6 @@ response.raise_for_status()
 
 cards = response.json()
 
-# existing_checklist_items = {
-#     (checklist["id"], item["name"].lower().strip())
-#     for card in cards
-#     for checklist in card.get("checklists", [])
-#     for item in checklist.get("checkItems", [])
-# }
-
-# print(existing_checklist_items)
-
-# existing_item_members = {
-#     (checklist["id"], item["name"].lower().strip()):
-#     set(item.get("idMembers", []))
-#     for card in cards
-#     for checklist in card.get("checklists", [])
-#     for item in checklist.get("checkItems", [])
-# }
-
 checklist_dict = {
     (card["name"].lower(), checklist["name"].lower()): checklist["id"]
     for card in cards
@@ -417,10 +400,6 @@ for _, row in workplan_df.iterrows():
         print(f"Checklist for card '{card_name}' not found. Skipping checklist item '{checklist_item}'.")
         continue
 
-    # if (checklist_id, checklist_item.lower().strip()) in existing_checklist_items:
-    #     print(f"A checklist item with the name '{checklist_item}' already exists in the checklist for card '{card_name}'. Skipping.")
-    #     continue
-
     if checklist_item in existing_checklist_items:
         print(f"A checklist item with the name '{checklist_item}' already exists in the checklist for card '{card_name}'. Skipping.")
         continue
@@ -444,50 +423,15 @@ for _, row in workplan_df.iterrows():
     )
     response.raise_for_status()
 
-    # item_card_id = response.json()["idCard"]
     item_card_id = card_dict.get(card_name.strip().lower())
 
     check_item_id = response.json()["id"]
 
-    # existing_item_members[(checklist_id, checklist_item.lower())] = set()
+
 
     existing_checklist_items.add((checklist_id, checklist_item.lower()))
 
-    # assignee = row["CHECKLIST ITEM ASSIGNMENT"]
-
-    # if pd.notna(assignee_raw):
-    #     assignee_names = [n.strip().lower() for n in assignee_raw.split(",")]
-    # else:
-    #     assignee_names = []
-
-    # member_ids = [
-    #     member_dict[name]
-    #     for name in assignee_names
-    #     if name in member_dict
-    # ]
-
     
-    # key = (checklist_id, checklist_item.lower())
-    # assigned_members = existing_item_members.get(key, set())
-
-    # for member_id in member_ids:
-    #     if member_id in assigned_members:
-    #         print(f"✅ Member already assigned to '{checklist_item}': skipping")
-    #         continue
-
-    #     requests.post(
-    #         f"https://api.trello.com/1/cards/{item_card_id}/checkItem/{check_item_id}/idMembers",
-    #         params={
-    #             "key": API_KEY,
-    #             "token": TOKEN,
-    #             "value": member_id
-    #         }
-    #     )
-
-    #     print(member_id)
-
-    #     # ✅ update lookup (important for same run)
-    #     assigned_members.add(member_id)
 
 
 
