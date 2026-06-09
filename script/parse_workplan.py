@@ -92,6 +92,7 @@ response.raise_for_status()
 
 members = response.json()
 
+# A dictionary of member names and the associated id to check against. 
 member_dict = {member["fullName"].lower().strip(): member["id"] for member in members}
 
 # Check what members are already on the board to avoid adding duplicates.
@@ -111,7 +112,7 @@ existing_board_member_ids = {
     for member in board_members
 }
 
-
+# Loop through the list of new board members and add them to the board 
 for member in new_board_members:
     member_id = member_dict.get(member.lower().strip())
 
@@ -149,6 +150,7 @@ label_definitions = {
     for _, row in label_df.iterrows()
 }
 
+# Get the list of labels already on the board to avoid creating duplicates.
 response = requests.get(
     f"https://api.trello.com/1/boards/{board_id}/labels",
     params={
@@ -162,6 +164,7 @@ existing_labels_dict = {label["name"].lower(): label["id"] for label in response
 
 label_dict = existing_labels_dict.copy()
 
+# Loop through new labels and add the new ones to the board 
 for name, color in label_definitions.items():
     key = name.lower().strip()
 
@@ -233,6 +236,7 @@ response.raise_for_status()
 
 lists = response.json()
 
+# Create a dictionary of lists and the associated ids. Used later to assign cards to the correct list. 
 list_dict = {lst["name"].lower().strip(): lst["id"] for lst in lists}
 
 # Get a list of all the cards on the board to avoid creating duplicates.
@@ -247,6 +251,7 @@ response.raise_for_status()
 
 cards = response.json()
 
+# A dictionary of cards and the associated IDs. 
 card_dict = {
     card["name"].lower(): card["id"]
     for card in cards 
@@ -364,12 +369,14 @@ response.raise_for_status()
 
 cards = response.json()
 
+# Create a dictionary of that looks like { (Card_Name, Checklist_Name): Checklist_ID }. Used to determine the checklist the item should be assigned to. 
 checklist_dict = {
     (card["name"].lower(), checklist["name"].lower()): checklist["id"]
     for card in cards
     for checklist in card.get("checklists", [])
 }
 
+# Loops through the workplan and add checklist items. 
 for _, row in workplan_df.iterrows():
     card_name = row["CARD NAME"]
     checklist_item = row["CHECKLIST ITEM DESCRIPTION"]
